@@ -1,0 +1,150 @@
+version: "3.9"
+
+services:
+  # ------------------ MONGO REPLICA SET ------------------
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo1-data:/data/db
+    networks:
+      - backend
+
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo2-data:/data/db
+    networks:
+      - backend
+
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo3-data:/data/db
+    networks:
+      - backend
+
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    entrypoint: >
+      bash -c "
+        sleep 20 &&
+        mongosh --host mongo1:27017 --eval '
+          rs.initiate({
+            _id: \"rs0\",
+            members: [
+              { _id: 0, host: \"mongo1:27017\" },
+              { _id: 1, host: \"mongo2:27017\" },
+              { _id: 2, host: \"mongo3:27017\" }
+            ]
+          })
+        '
+      "
+    networks:
+      - backend
+
+  # ------------------ REDIS ------------------
+  redis:
+    image: redis:7
+    container_name: redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend
+
+  # ------------------ AUTH SERVICE ------------------
+  auth:
+    build: ./auth-service
+    container_name: auth-service
+    env_file: .env
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/auth?replicaSet=rs0
+    expose:
+      - "5001"
+    networks:
+      - backend
+
+  # ------------------ PRODUCT SERVICE ------------------
+  product:
+    build: ./product-service
+    container_name: product-service
+    env_file: .env
+    environment:
+      - PORT=5002
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/product?replicaSet=rs0
+    depends_on:
+      - redis
+    expose:
+      - "5002"
+    volumes:
+      - ./product-service/uploads:/app/uploads
+    networks:
+      - backend
+
+  # ------------------ CART SERVICE ------------------
+  cart:
+    build: ./cart-service
+    container_name: cart-service
+    env_file: .env
+    environment:
+      - PORT=5003
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/cart?replicaSet=rs0
+    depends_on:
+      - redis
+    expose:
+      - "5003"
+    networks:
+      - backend
+
+  # ------------------ ORDER SERVICE ------------------
+  order:
+    build: ./order-service
+    container_name: order-service
+    env_file: .env
+    environment:
+      - PORT=5004
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/order?replicaSet=rs0
+    depends_on:
+      - redis
+    expose:
+      - "5004"
+    networks:
+      - backend
+
+  # ------------------ NGINX API GATEWAY ------------------
+  nginx:
+    image: nginx:stable
+    container_name: mfe-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - auth
+      - product
+      - cart
+      - order
+    entrypoint: >
+      sh -c "sleep 15 && nginx -g 'daemon off;'"
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  redis-data:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:
