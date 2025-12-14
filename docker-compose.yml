@@ -29,6 +29,7 @@ services:
     networks:
       - backend
 
+  # Init replica set
   mongo-init:
     image: mongo:7
     container_name: mongo-init
@@ -57,70 +58,84 @@ services:
   redis:
     image: redis:7
     container_name: redis
-    volumes:
-      - redis-data:/data
     networks:
       - backend
+    volumes:
+      - redis-data:/data
 
   # ------------------ AUTH SERVICE ------------------
   auth:
     build: ./auth-service
     container_name: auth-service
-    env_file: .env
     environment:
       - PORT=5001
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/auth?replicaSet=rs0
-    expose:
-      - "5001"
+      - ADMIN_SECRET=supersecret123
+      - ADMIN_PASSWORD=qwerty12
+      - ADMIN_EMAIL=admin@forever.com
+      - JWT_SECRET=forever
+      
     networks:
       - backend
+    expose:
+      - "5001"
 
   # ------------------ PRODUCT SERVICE ------------------
   product:
     build: ./product-service
     container_name: product-service
-    env_file: .env
     environment:
       - PORT=5002
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/product?replicaSet=rs0
+      - CLOUDINARY_CLOUD_NAME=ddcapbonv
+      - CLOUDINARY_API_KEY=193935646561233
+      - CLOUDINARY_API_SECRET=5kX6R6KqGZTQmtKaeN52GISh_sg
+      - REDIS_URL=redis://default:password@redis:6379
+      - JWT_SECRET=forever
+      - ADMIN_SECRET=supersecret123
+      - ADMIN_PASSWORD=qwerty12
+      - ADMIN_EMAIL=admin@forever.com
     depends_on:
       - redis
+    networks:
+      - backend
     expose:
       - "5002"
     volumes:
-      - ./product-service/uploads:/app/uploads
-    networks:
-      - backend
+      - ./product-service/uploads:/app/uploads 
 
   # ------------------ CART SERVICE ------------------
   cart:
     build: ./cart-service
     container_name: cart-service
-    env_file: .env
     environment:
       - PORT=5003
-      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/cart?replicaSet=rs0
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/auth?replicaSet=rs0
+      - JWT_SECRET=forever
+      - REDIS_URL=redis://default:password@redis:6379
     depends_on:
       - redis
-    expose:
-      - "5003"
     networks:
       - backend
+    expose:
+      - "5003"
 
   # ------------------ ORDER SERVICE ------------------
   order:
     build: ./order-service
     container_name: order-service
-    env_file: .env
     environment:
       - PORT=5004
       - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/order?replicaSet=rs0
+      - JWT_SECRET=forever
+      - STRIPE_SECRET_KEY=sk_test_51QdpKnFj7XmjtqXtQUoXMHgPSqLbgFmtCqj76af2UvIFr7gMuNBI8zkjArrwMidGOZvMOBy5f3384HfaAGJeVuuJ00eld9fUE9
+      - REDIS_URL=redis://default:password@redis:6379
     depends_on:
       - redis
-    expose:
-      - "5004"
     networks:
       - backend
+    expose:
+      - "5004"
 
   # ------------------ NGINX API GATEWAY ------------------
   nginx:
@@ -133,16 +148,18 @@ services:
     depends_on:
       - auth
       - product
-      - cart
       - order
-    entrypoint: >
-      sh -c "sleep 15 && nginx -g 'daemon off;'"
+      - cart
     networks:
       - backend
+    entrypoint: >
+      sh -c "sleep 15 && nginx -g 'daemon off;'"
 
+# ------------------ NETWORKS ------------------
 networks:
   backend:
 
+# ------------------ VOLUMES ------------------
 volumes:
   redis-data:
   mongo1-data:
